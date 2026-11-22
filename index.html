@@ -69,7 +69,8 @@
   /* kiss question */
   .kiss-btns { display: flex; gap: 40px; align-items: center; justify-content: center; min-height: 120px; }
   #yes { color: var(--pink); font-size: 22px; transition: transform .2s ease; }
-  #no  { color: var(--sky); font-size: 18px; transition: left .18s ease, top .18s ease; z-index: 5; }
+  #no  { color: var(--sky); font-size: 18px; transition: left .18s ease, top .18s ease; z-index: 50; background: #000; }
+  #s-kiss .question, #s-kiss .progress { position: relative; z-index: 2; }
 
   /* pass screen */
   .rainbow span { animation: rainbow 2s linear infinite; display: inline-block; }
@@ -98,6 +99,17 @@
   /* bouquet */
   #bouquet { position: fixed; inset: 0; margin: 0; z-index: 2; white-space: pre; overflow: hidden; color: #fff; }
   #measure { position: absolute; visibility: hidden; white-space: pre; }
+  #ending {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; display: none;
+    padding: 10px 18px 16px; text-align: center; background: linear-gradient(transparent, #000 30%);
+    opacity: 0; transition: opacity 1.2s ease;
+  }
+  #ending.show { opacity: 1; }
+  #endMsg { font-size: clamp(16px, 4.2vw, 24px); line-height: 1.35; margin: 0 auto 10px; max-width: 760px; }
+  #endMsg span { animation: rainbow 2.5s linear infinite; }
+  #thanks { color: #8a8a99; font-size: clamp(11px, 3vw, 13px); line-height: 1.5; margin: 0 auto; max-width: 640px; }
+  #thanks .name { color: var(--sky); }
+  #thanks em { color: var(--pink); }
 </style>
 </head>
 <body>
@@ -152,6 +164,12 @@
 
 <!-- 7. bouquet -->
 <pre id="bouquet" style="display:none"></pre>
+<div id="ending">
+  <p id="endMsg">Happy monthsaryy babyy, I hope yaa enjoyed the flowers as much as real ones heh.</p>
+  <p id="thanks">big thanks to <span class="name">@alishsharma</span> on tiktok cuz I wouldnt have known how to do this
+    spinny carnation flower thingyyy, and also for helpin me find another way to make my beautiful babyy happy
+    <em>(dapat masaya ka dito)</em></p>
+</div>
 <span id="measure"></span>
 
 <script>
@@ -159,22 +177,40 @@
    EDIT THESE: the answers she has to type (not case sensitive,
    spaces and punctuation are ignored, so "Giann!!" = "giann")
    =================================================================== */
-const CONFIG = {
-  boyfriendName:   ["giann", "gian", "giann carlo", "giann carlo pesalbon"],
-  lovesMost:       ["me", "you", "her"],          // <- add her name / nicknames here
-  favouriteFlower: ["carnation", "carnations"],
-  wrongMessage:    "wrong, try again baby 😤💔",
-  bouquetMessage:  "happy monthsary ♥",
-};
+const words = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+
+function typoDistance(a, b) {          // how many letters off two words are
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
 
 const QUESTIONS = [
-  { text: "What's the name of your boyfriend?",              answers: CONFIG.boyfriendName },
-  { text: "Who does he love the most in da entire world?",   answers: CONFIG.lovesMost },
-  { text: "What is his girlfriend's favourite flower?",      answers: CONFIG.favouriteFlower },
+  {
+    text: "What's the name of your boyfriend?",
+    check: v => norm(v).includes("giann"),
+    wrong: ["ok im hurt.", "babawi ka saken nyan ah"],
+  },
+  {
+    text: "Who does he love the most in da entire world?",
+    check: v => norm(v).includes("lyanne") || norm(v).includes("leyan") || words(v).includes("me"),
+    wrong: ["WHO IS THATTT", "ion know any other woman but you heh.. . and ma mom", "grabe ka naman ohh"],
+  },
+  {
+    text: "What is his girlfriend's favourite flower?",
+    check: v => norm(v).includes("carnation") ||
+                words(v).some(w => typoDistance(w, "carnation") <= 2 || typoDistance(w, "carnations") <= 2),
+    wrong: ["unless my memory serves me wrong, that isnt the answer",
+            "please don't call me dude for the whole week if im wrong, but try again babyyy.",
+            "heh nowp"],
+  },
 ];
 const KISS_TEXT = "Will ya promise to passionately kiss him because he crashed out for 3 hours debugging this?";
-const NO_LINES = ["no", "are u sure??", "3 HOURS 😭", "think again 😤", "pls 🥺", "wrong button",
-                  "nuh uh", "try the other one", "he debugged for u...", "error 404: no not found"];
+const NO_LINES = ["bat ka nag hover jan", "LUHH", "3 hourss 🥹", "ANUBA BABYY", "magtatampo na q",
+                  "humanda ka sakenn", "🥹🥹🥹", "404 error"];   // after these, "no" turns into another "yes"
 
 const $ = id => document.getElementById(id);
 const PASTELS = ["#ffb3de", "#9ad8ff", "#cdb4ff", "#b5f5d0", "#fff3a8"];
@@ -217,7 +253,7 @@ function shake(el) {
 }
 
 /* ---------- questions ---------- */
-let qi = 0, locked = false;
+let qi = 0, locked = false, wrongCount = 0;
 
 function showQuestion() {
   show("s-q");
@@ -226,14 +262,15 @@ function showQuestion() {
   $("qMsg").textContent = "";
   $("qMsg").className = "msg";
   locked = false;
+  wrongCount = 0;
   typeText($("qText"), QUESTIONS[qi].text, () => $("answer").focus());
 }
 
 function submitAnswer() {
   if (locked) return;
-  const val = norm($("answer").value);
-  if (!val) { shake($("answer")); return; }
-  const ok = QUESTIONS[qi].answers.some(a => norm(a) === val);
+  const raw = $("answer").value;
+  if (!norm(raw)) { shake($("answer")); return; }
+  const ok = QUESTIONS[qi].check(raw);
   const msg = $("qMsg");
   if (ok) {
     locked = true;
@@ -241,7 +278,8 @@ function submitAnswer() {
     msg.className = "msg right";
     setTimeout(() => { qi++; qi < QUESTIONS.length ? showQuestion() : showKiss(); }, 1000);
   } else {
-    msg.textContent = CONFIG.wrongMessage;
+    const lines = QUESTIONS[qi].wrong;
+    msg.textContent = lines[wrongCount++ % lines.length];
     msg.className = "msg wrong";
     shake($("answer"));
   }
@@ -256,15 +294,27 @@ let dodges = 0, noFloating = false;
 const yesBtn = $("yes"), noBtn = $("no");
 
 function showKiss() {
+  $("kissText").textContent = KISS_TEXT;   // shown whole, so the runaway "no" knows where not to land
   show("s-kiss");
-  typeText($("kissText"), KISS_TEXT);
 }
 
+let noIsYes = false, lastDodge = 0;
+
 function dodge(e) {
+  if (noIsYes) return;
   if (e) { e.preventDefault(); e.stopPropagation(); }
+  const now = performance.now();
+  if (now - lastDodge < 250) return;    // so one hover doesn't skip a line
+  lastDodge = now;
   dodges++;
-  yesBtn.style.transform = `scale(${Math.min(1 + dodges * 0.3, 5)})`;
-  noBtn.textContent = NO_LINES[dodges % NO_LINES.length];
+  yesBtn.style.transform = `scale(${Math.min(1 + dodges * 0.25, 3.2)})`;
+  if (dodges > NO_LINES.length) {       // ran out of excuses: "no" becomes another "yes"
+    noIsYes = true;
+    noBtn.textContent = "yes";
+    noBtn.style.color = "var(--pink)";
+    return;
+  }
+  noBtn.textContent = NO_LINES[dodges - 1];
 
   if (!noFloating) {               // detach it so it can run anywhere on screen
     const r = noBtn.getBoundingClientRect();
@@ -276,28 +326,34 @@ function dodge(e) {
     void noBtn.offsetWidth;
   }
   const nb = noBtn.getBoundingClientRect();
-  const yb = yesBtn.getBoundingClientRect();
-  const W = window.innerWidth, H = window.innerHeight;
-  let x = 0, y = 0;
-  for (let tries = 0; tries < 40; tries++) {
+  // never land on top of the question, the progress line or the yes button
+  const avoid = [yesBtn, $("kissText"), document.querySelector("#s-kiss .progress")].map(el => el.getBoundingClientRect());
+  const W = window.innerWidth, H = window.innerHeight, pad = 14;
+  let x = 0, y = 0, best = null;
+  for (let tries = 0; tries < 200; tries++) {
     x = 10 + Math.random() * Math.max(0, W - nb.width - 20);
     y = 10 + Math.random() * Math.max(0, H - nb.height - 20);
-    const farFromOld = Math.hypot(x - nb.left, y - nb.top) > 140;
-    const offYes = x + nb.width < yb.left - 10 || x > yb.right + 10 || y + nb.height < yb.top - 10 || y > yb.bottom + 10;
-    if (farFromOld && offYes) break;
+    const farFromOld = Math.hypot(x - nb.left, y - nb.top) > 120;
+    const clear = avoid.every(r => x + nb.width < r.left - pad || x > r.right + pad ||
+                                   y + nb.height < r.top - pad || y > r.bottom + pad);
+    if (clear && !best) best = [x, y];
+    if (clear && farFromOld) { best = [x, y]; break; }
   }
+  if (best) [x, y] = best;
   noBtn.style.left = x + "px";
   noBtn.style.top = y + "px";
 }
 
-noBtn.addEventListener("pointerenter", e => { if (e.pointerType === "mouse") dodge(e); });
-noBtn.addEventListener("touchstart", dodge, { passive: false });
-noBtn.addEventListener("click", dodge);
-
-yesBtn.onclick = () => {
+function sayYes() {
   noBtn.remove();
   show("s-pass");
-};
+}
+
+noBtn.addEventListener("pointerenter", e => { if (e.pointerType === "mouse") dodge(e); });
+noBtn.addEventListener("touchstart", e => { if (!noIsYes) dodge(e); }, { passive: false });
+noBtn.addEventListener("click", e => { noIsYes ? sayYes() : dodge(e); });
+
+yesBtn.onclick = sayYes;
 
 /* ---------- pass screen ---------- */
 (function rainbowLetters() {
@@ -313,6 +369,18 @@ yesBtn.onclick = () => {
 })();
 
 $("claimBtn").onclick = openPresent;
+
+(function rainbowEnding() {          // the ending message cycles through pastel colours letter by letter
+  const el = $("endMsg");
+  const text = Array.from(el.textContent);
+  el.textContent = "";
+  text.forEach((ch, i) => {
+    const s = document.createElement("span");
+    s.textContent = ch;
+    s.style.animationDelay = (-i * 0.08) + "s";
+    el.appendChild(s);
+  });
+})();
 
 /* ---------- present ---------- */
 const LID = [
@@ -553,7 +621,7 @@ function render(t, grow) {
   const chars = new Array(total).fill(" ");
   const colors = new Array(total).fill(null);
   const zbuf = new Float32Array(total).fill(-1e9);
-  const viewRows = rows - 3;
+  const viewRows = rows;
 
   const fullScale = Math.max(1, Math.min((viewRows - 2) / 1.45, (cols - 2) / (1.35 * ratio)));
   const scale = fullScale * Math.max(0.02, grow);
@@ -653,18 +721,6 @@ function render(t, grow) {
     else if (tw > 0) plot(Math.floor(px), Math.floor(py), zt, "·", "#ffb3de");
   }
 
-  // message + credit
-  const msg = Array.from(CONFIG.bouquetMessage);
-  const mrow = rows - 3, start = Math.max(0, Math.floor((cols - msg.length) / 2)), shift = Math.floor(t * 6);
-  msg.forEach((ch, i) => {
-    if (start + i < cols) { chars[mrow * cols + start + i] = ch; colors[mrow * cols + start + i] = MSG_COLORS[(i + shift) % MSG_COLORS.length]; }
-  });
-  const hint = Array.from("bouquet based on code by @alishsharma (tiktok)");
-  const hstart = Math.max(0, Math.floor((cols - hint.length) / 2));
-  hint.forEach((ch, i) => {
-    if (hstart + i < cols) { chars[(rows - 1) * cols + hstart + i] = ch; colors[(rows - 1) * cols + hstart + i] = "#444444"; }
-  });
-
   // build the html, one <span> per run of the same colour
   const esc = ch => ch === "<" ? "&lt;" : ch === ">" ? "&gt;" : ch === "&" ? "&amp;" : ch;
   const out = [];
@@ -697,8 +753,9 @@ function setupGrid() {
   m.style.fontSize = fs + "px";
   m.textContent = "M".repeat(100);
   const cw = m.getBoundingClientRect().width / 100 || fs * 0.6;
+  const endH = $("ending").getBoundingClientRect().height;   // leave room for the message at the bottom
   cols = Math.max(20, Math.floor(W / cw));
-  rows = Math.max(12, Math.floor(H / fs));
+  rows = Math.max(12, Math.floor((H - endH * 0.85) / fs));
   ratio = fs / cw;
 }
 
@@ -707,6 +764,9 @@ function startBouquet() {
   $("stars").style.display = "none";
   const pre = $("bouquet");
   pre.style.display = "block";
+  const ending = $("ending");
+  ending.style.display = "block";
+  setTimeout(() => ending.classList.add("show"), 2600);
   scene = buildScene();
   setupGrid();
   window.addEventListener("resize", setupGrid);
